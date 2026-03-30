@@ -524,10 +524,10 @@ int main(void)
 
   //test(timers);
 
-  /*while(!isBtn_on()) 
+  while(!isBtn_on()) 
   {
     HAL_Delay(50);
-  }*/
+  }
   transmit_int("------------START------------", 0);
   /* USER CODE END 2 */
 
@@ -540,11 +540,11 @@ int main(void)
   { 
     //transmit_int("i: \r\n", (uint32_t) i);
       //transmit_int("button state: \r\n", isBtn_on());
-      /*if(i > 10 && isBtn_on())
+      if(i > 100 && isBtn_on())
       {
-        transmit_int("ENTERED \r\n", 0);
+        transmit_int("------------STOP------------\r\n", 0);
         break;
-      }*/
+      }
 
       get_pololu_readings();
       get_avg_sharp_readings();
