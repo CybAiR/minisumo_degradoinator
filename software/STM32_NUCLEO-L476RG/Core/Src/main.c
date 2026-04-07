@@ -57,8 +57,8 @@ UART_HandleTypeDef huart2;
 #define L 1 //left
 #define R 2 //right
 #define F 0 //front
-#define ND -1 //no direction
 #define None -1 //none
+#define NS -1 //not specified
 
 #define BATCH_SIZE 10
 
@@ -74,13 +74,11 @@ struct Timers_S {
   struct Timer_S right_minus;
 };
 
-volatile uint32_t gQtr1_val = 0, gQtr2_val = 0;
-volatile uint32_t gSharp1_val = 0, gSharp2_val = 0, gSharp3_val = 0;
-volatile uint32_t gAvg_sharp1 = 0, gAvg_sharp2 = 0, gAvg_sharp3 = 0;
+volatile uint32_t gQtr_L_val = 0, gQtr_R_val = 0;
+volatile uint32_t gSharp_L_val = 0, gSharp_M_val = 0, gSharp_R_val = 0;
+volatile uint32_t gAvg_sharp_L = 0, gAvg_sharp_M = 0, gAvg_sharp_R = 0;
 
-volatile int32_t sharp1_vals[BATCH_SIZE], sharp2_vals[BATCH_SIZE], sharp3_vals[BATCH_SIZE];
-
-volatile int gLine_position = None;
+volatile int32_t gSharp_L_vals[BATCH_SIZE], gSharp_M_vals[BATCH_SIZE], gSharp_R_vals[BATCH_SIZE];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -97,6 +95,11 @@ static void MX_ADC1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void transmit_string(char str[])
+{
+  HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 10);
+}
+
 
 void transmit_int(char name[], uint32_t value)
 {
@@ -166,13 +169,13 @@ void get_pololu_readings(void){
     HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
     flush();
-    gQtr1_val = get_reading();
+    gQtr_L_val = get_reading();
 
     sConfig.Channel = ADC_CHANNEL_6;
     HAL_ADC_ConfigChannel(&hadc1, &sConfig);
     
     flush();
-    gQtr2_val = get_reading();
+    gQtr_R_val = get_reading();
 }
 
 void get_sharp_readings(void){
@@ -188,21 +191,21 @@ void get_sharp_readings(void){
 
     flush();
     
-    gSharp1_val = get_reading();
+    gSharp_L_val = get_reading();
 
     sConfig.Channel = ADC_CHANNEL_2;
     if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) { Error_Handler(); }
 
     flush();
 
-    gSharp2_val = get_reading();
+    gSharp_M_val = get_reading();
 
     sConfig.Channel = ADC_CHANNEL_1;
     if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) { Error_Handler(); }
 
     flush();
 
-    gSharp3_val = get_reading();
+    gSharp_R_val = get_reading();
 }
 
 void get_avg_sharp_readings()
@@ -211,57 +214,46 @@ void get_avg_sharp_readings()
   {
       get_sharp_readings();
 
-      sharp1_vals[i] = gSharp1_val;
-      sharp2_vals[i] = gSharp2_val;
-      sharp3_vals[i] = gSharp3_val;
+      gSharp_L_vals[i] = gSharp_L_val;
+      gSharp_M_vals[i] = gSharp_M_val;
+      gSharp_R_vals[i] = gSharp_R_val;
   }
 
-  gAvg_sharp1 = 0;
-  gAvg_sharp2 = 0; 
-  gAvg_sharp3 = 0;
+  gAvg_sharp_L = 0;
+  gAvg_sharp_M = 0; 
+  gAvg_sharp_R = 0;
 
   for(int i = 0; i < BATCH_SIZE; ++i)
   {
-    gAvg_sharp1 += sharp1_vals[i];
-    gAvg_sharp2 += sharp2_vals[i];
-    gAvg_sharp3 += sharp3_vals[i];
+    gAvg_sharp_L += gSharp_L_vals[i];
+    gAvg_sharp_M += gSharp_M_vals[i];
+    gAvg_sharp_R += gSharp_R_vals[i];
   }
 
-  gAvg_sharp1 /= BATCH_SIZE;
-  gAvg_sharp2 /= BATCH_SIZE;
-  gAvg_sharp3 /= BATCH_SIZE;
+  gAvg_sharp_L /= BATCH_SIZE;
+  gAvg_sharp_M /= BATCH_SIZE;
+  gAvg_sharp_R /= BATCH_SIZE;
 }
 
 void transmit_sharp_readings(void)
 {
-    transmit_int("sharp1", gAvg_sharp1);
-    transmit_int("sharp2", gAvg_sharp2);
-    transmit_int("sharp3", gAvg_sharp3);
+    transmit_int("sharp1", gAvg_sharp_L);
+    transmit_int("sharp2", gAvg_sharp_M);
+    transmit_int("sharp3", gAvg_sharp_R);
     HAL_UART_Transmit(&huart2, (uint8_t *)"\n", sizeof('\n'), 10);
 }
 
-void transmit_pololu_readings(void)
+void transmit_qtr_readings(void)
 {
-  transmit_int("qtr1", gQtr1_val);
-  transmit_int("qtr2", gQtr2_val);
+  transmit_int("qtr1", gQtr_L_val);
+  transmit_int("qtr2", gQtr_R_val);
   HAL_UART_Transmit(&huart2, (uint8_t *)"\n", sizeof('\n'), 10);
 }
 
 bool isLine_found()
 {
-    if(gQtr1_val < 1500 && gQtr2_val < 1500)
+    if(gQtr_L_val < 1500 || gQtr_R_val < 1500)
     {
-      gLine_position = F;
-      return true;
-    }
-    if(gQtr1_val < 1500)
-    {
-      gLine_position = R;
-      return true;
-    }
-    if(gQtr2_val < 1500)
-    {
-      gLine_position = L;
       return true;
     }
     return false;
@@ -269,25 +261,25 @@ bool isLine_found()
 
 int get_enemy_position(void)
 {
-  if(gAvg_sharp1 < 1000 && gAvg_sharp2 >= 1000 && gAvg_sharp3 < 1000) 
+  if(gAvg_sharp_L < 1000 && gAvg_sharp_M >= 1000 && gAvg_sharp_R < 1000) 
   {
     return F;
   }
-  else if(gAvg_sharp1 >= 1000 && gAvg_sharp3 >= 1000) 
+  else if(gAvg_sharp_L >= 1000 && gAvg_sharp_R >= 1000) 
   {
     return F;
   }
-  else if(gAvg_sharp3 >= 1000) 
+  else if(gAvg_sharp_R >= 1000) 
   {
     return R;
   }
-  else if(gAvg_sharp1 >= 1000) 
+  else if(gAvg_sharp_L >= 1000) 
   {
     return L;
   }
   else 
   {
-    return ND;
+    return None;
   }
 }
 
@@ -398,7 +390,7 @@ void test_motor(TIM_HandleTypeDef *pTim_1, uint32_t channel_1, uint32_t power, c
   strcat(name, direction);
   strcat(name, "\n");
   puts(name);
-  transmit_int(name, (uint32_t) 1);
+  transmit_string(name);
 
   __HAL_TIM_SET_COMPARE(pTim_1, channel_1, power);
 
@@ -414,7 +406,7 @@ void test_motor(TIM_HandleTypeDef *pTim_1, uint32_t channel_1, uint32_t power, c
   strcat(name, direction);
   strcat(name, "\n");
   puts(name);
-  transmit_int(name, (uint32_t) 1);
+  transmit_string(name);
 
   HAL_Delay(1000);
 }
@@ -424,44 +416,44 @@ void kill_enemy(struct Timers_S timers, int enemy_pos)
   switch (enemy_pos)
   {
     case F:
-      transmit_int("enemy is in front \r\n", 0);
-      go_forward(timers, true, enemy_pos, -1);
+      transmit_string("enemy is in front \r\n");
+      go_forward(timers, true, enemy_pos, NS);
       break;
 
     case R:
-      transmit_int("enemy is on the right \r\n", 0);
-      turn_right_forward(timers, true, enemy_pos, -1);
+      transmit_string("enemy is on the right \r\n");
+      turn_right_forward(timers, true, enemy_pos, NS);
       break;
 
     case L:
-      transmit_int("enemy is on the left \r\n", 0);
-      turn_left_forward(timers, true, enemy_pos, -1);
+      transmit_string("enemy is on the left \r\n");
+      turn_left_forward(timers, true, enemy_pos, NS);
       break;
   }
 }
 
 void search_for_enemy(struct Timers_S timers)
 {
-  turn_left_forward(timers, true, ND, -1);
+  turn_left_forward(timers, true, None, NS);
 }
 
 void test(struct Timer_S timers[])
 {
-  transmit_int("MOTORS TEST   test id: ", 0);
+  transmit_string("MOTORS TEST");
   test_motor(timers[0].htim, timers[0].channel, 100, "left", "+");
   test_motor(timers[1].htim, timers[1].channel, 100, "left", "-");
   test_motor(timers[2].htim, timers[2].channel, 100, "right", "+");
   test_motor(timers[3].htim, timers[3].channel, 100, "right", "-");
 
-  transmit_int("QTR SENSORS TEST   test id: ", 1);
+  transmit_string("QTR SENSORS TEST");
   for(int i = 0; i < 5; ++i)
   {
     get_pololu_readings();
-    transmit_pololu_readings();
+    transmit_qtr_readings();
     HAL_Delay(100);
   }
 
-  transmit_int("SHARP SENSORS TEST   test id: ", 2);
+  transmit_string("SHARP SENSORS TEST");
   for(int i = 0; i < 5; ++i)
   {
     get_avg_sharp_readings();
@@ -469,7 +461,7 @@ void test(struct Timer_S timers[])
     HAL_Delay(100);
   }
 
-  transmit_int("BUTTON TEST   test id: ", 3);
+  transmit_string("BUTTON TEST");
   while(!isBtn_on()) 
   {
     HAL_Delay(20);
@@ -528,7 +520,8 @@ int main(void)
   {
     HAL_Delay(50);
   }
-  transmit_int("------------START------------", 0);
+
+  transmit_string("------------START------------\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -536,13 +529,12 @@ int main(void)
   int i = 0;
   __HAL_TIM_SET_COMPARE(timers.left_plus.htim, timers.left_plus.channel, 60);
   __HAL_TIM_SET_COMPARE(timers.right_plus.htim, timers.right_plus.channel, 60);
+
   while (1)
-  { 
-    //transmit_int("i: \r\n", (uint32_t) i);
-      //transmit_int("button state: \r\n", isBtn_on());
+  {
       if(i > 100 && isBtn_on())
       {
-        transmit_int("------------STOP------------\r\n", 0);
+        transmit_string("------------STOP------------\r\n");
         break;
       }
 
@@ -551,37 +543,31 @@ int main(void)
 
       int enemy_pos = get_enemy_position();
 
-      //change later (I test robot on opposite colors)
-      if ((gQtr1_val > 1500 || gQtr2_val > 1500) && enemy_pos == None)
+      //change for opposite colors
+      if (enemy_pos == None && isLine_found())
       {
           stop_motors(timers);
-          transmit_int("line is found, turning left \r\n", 0);
+          transmit_string("line is found, turning left \r\n");
           go_back(timers, 100);
           turn_left_backward(timers, false, None, 300);
-          transmit_int("stopped turning \r\n", 0);
-          transmit_int("go forward\r\n", 0);
+          transmit_string("stopped turning \r\n");
+          transmit_string("go forward\r\n");
           __HAL_TIM_SET_COMPARE(timers.left_plus.htim, timers.left_plus.channel, 60);
           __HAL_TIM_SET_COMPARE(timers.right_plus.htim, timers.right_plus.channel, 60);
       }
 
       transmit_sharp_readings();
-      transmit_pololu_readings();
+      transmit_qtr_readings();
       
       
       if(enemy_pos != None)
       {
-        transmit_int("there is enemy \r\n", 0);
+        transmit_string("there is enemy \r\n");
         kill_enemy(timers, enemy_pos);
-        transmit_int("after killing enemy \r\n", 0);
+        transmit_string("after killing enemy \r\n");
         __HAL_TIM_SET_COMPARE(timers.left_plus.htim, timers.left_plus.channel, 60);
         __HAL_TIM_SET_COMPARE(timers.right_plus.htim, timers.right_plus.channel, 60);
-      } 
-      /*else 
-      {
-        transmit_int("search for enemy \r\n", 0);
-        search_for_enemy(timers);
-        transmit_int("after searching for enemy \r\n", 0);
-      }*/
+      }
       
       HAL_Delay(5);
       i++;
@@ -591,7 +577,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
   }
 
-  transmit_int("end of while ", 0);
+  transmit_string("end of while \r\n");
   reset(timers);
   
   /* USER CODE END 3 */
