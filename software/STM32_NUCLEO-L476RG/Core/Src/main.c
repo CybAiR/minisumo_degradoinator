@@ -22,11 +22,12 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-#include <math.h>
-#include <time.h>
+#include "movement.h"
+#include "robot_test.h"
+#include "sensors.h"
+#include "uart.h"
+#include "time_utils.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -36,6 +37,12 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define START_BUTTON_POLL_DELAY_MS        100U
+#define MOVEMENT_BUTTON_POLL_DELAY_MS     1U
+#define LINE_ESCAPE_TURN_DURATION_MS      500U
+
+#define LINE_THRESHOLD 1500U
+#define ENEMY_THRESHOLD 1000U
 
 /* USER CODE END PD */
 
@@ -49,424 +56,122 @@ ADC_HandleTypeDef hadc1;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
-TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-#define L 1 //left
-#define R 2 //right
-#define F 0 //front
-#define None -1 //none
-#define NS -1 //not specified
-
-#define BATCH_SIZE 10
-
-struct Timer_S {
-  TIM_HandleTypeDef *htim;
-  uint32_t channel;
+enum EnemyPosition {
+  FRONT = 0,
+  LEFT = 1,
+  RIGHT = 2,
+  NONE = -1
 };
-
-struct Timers_S {
-  struct Timer_S left_plus;
-  struct Timer_S left_minus;
-  struct Timer_S right_plus;
-  struct Timer_S right_minus;
-};
-
-volatile uint32_t gQtr_L_val = 0, gQtr_R_val = 0;
-volatile uint32_t gSharp_L_val = 0, gSharp_M_val = 0, gSharp_R_val = 0;
-volatile uint32_t gAvg_sharp_L = 0, gAvg_sharp_M = 0, gAvg_sharp_R = 0;
-
-volatile int32_t gSharp_L_vals[BATCH_SIZE], gSharp_M_vals[BATCH_SIZE], gSharp_R_vals[BATCH_SIZE];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM3_Init(void);
-static void MX_TIM4_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void transmit_string(char str[])
-{
-  HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 10);
-}
-
-
-void transmit_int(char name[], uint32_t value)
-{
-  char buffer[32];
-  int len = sprintf(buffer, "%s: %u  ", name, value);
-  HAL_UART_Transmit(&huart2, (uint8_t *)buffer, len, 10);
-}
-
-void flush(){
-    HAL_ADC_Start(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, 100);
-    volatile uint32_t trash = HAL_ADC_GetValue(&hadc1);
-    HAL_ADC_Stop(&hadc1); // <--- IMPORTANT: Stop it so we can restart cleanly
-}
-
-volatile uint32_t get_reading(void){
-    HAL_ADC_Start(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, 100);
-    volatile uint32_t value = HAL_ADC_GetValue(&hadc1);
-    HAL_ADC_Stop(&hadc1);
-    return value;
-}
-
-void init(struct Timers_S timers)
-{
-    HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
-    
-    HAL_TIM_PWM_Start(timers.left_minus.htim, timers.left_minus.channel);
-    HAL_TIM_PWM_Start(timers.right_minus.htim, timers.right_minus.channel);
-    HAL_TIM_PWM_Start(timers.left_plus.htim, timers.left_plus.channel);
-    HAL_TIM_PWM_Start(timers.right_plus.htim, timers.right_plus.channel);
-}
-
-void reset(struct Timers_S timers)
-{
-    HAL_TIM_PWM_Stop(timers.left_minus.htim, timers.left_minus.channel);
-    HAL_TIM_PWM_Stop(timers.right_minus.htim, timers.right_minus.channel);
-    HAL_TIM_PWM_Stop(timers.left_plus.htim, timers.left_plus.channel);
-    HAL_TIM_PWM_Stop(timers.right_plus.htim, timers.right_plus.channel);
-
-    HAL_ADC_Stop(&hadc1);
-}
-
-bool isBtn_on(void)
-{
-    GPIO_PinState pin_state = HAL_GPIO_ReadPin(D4_GPIO_Port, D4_Pin);
-    
-    transmit_int("mono button", pin_state);
-    transmit_int("pin set", GPIO_PIN_SET);
-    
-    if (pin_state != GPIO_PIN_SET) 
-    {
-        return false;
-    }
+bool check_if_stop_battle(){
+  if(Sensors_button_on())
+  {
+    UART_write("------------STOP------------\r\n");
     return true;
-}
-
-void get_pololu_readings(void){
-    ADC_ChannelConfTypeDef sConfig = {0};
-    
-    sConfig.Rank = ADC_REGULAR_RANK_1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_47CYCLES_5;
-    sConfig.SingleDiff = ADC_SINGLE_ENDED;
-    sConfig.OffsetNumber = ADC_OFFSET_NONE;
-
-    sConfig.Channel = ADC_CHANNEL_5;
-    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
-
-    flush();
-    gQtr_L_val = get_reading();
-
-    sConfig.Channel = ADC_CHANNEL_6;
-    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
-    
-    flush();
-    gQtr_R_val = get_reading();
-}
-
-void get_sharp_readings(void){
-    ADC_ChannelConfTypeDef sConfig = {0};
-
-    sConfig.Rank = ADC_REGULAR_RANK_1;
-    sConfig.SingleDiff = ADC_SINGLE_ENDED;
-    sConfig.OffsetNumber = ADC_OFFSET_NONE;
-    sConfig.SamplingTime = ADC_SAMPLETIME_640CYCLES_5;
-
-    sConfig.Channel = ADC_CHANNEL_15;
-    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) { Error_Handler(); }
-
-    flush();
-    
-    gSharp_L_val = get_reading();
-
-    sConfig.Channel = ADC_CHANNEL_2;
-    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) { Error_Handler(); }
-
-    flush();
-
-    gSharp_M_val = get_reading();
-
-    sConfig.Channel = ADC_CHANNEL_1;
-    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) { Error_Handler(); }
-
-    flush();
-
-    gSharp_R_val = get_reading();
-}
-
-void get_avg_sharp_readings()
-{
-  for(int i = 0; i < BATCH_SIZE; ++i)
-  {
-      get_sharp_readings();
-
-      gSharp_L_vals[i] = gSharp_L_val;
-      gSharp_M_vals[i] = gSharp_M_val;
-      gSharp_R_vals[i] = gSharp_R_val;
   }
+  return false;
+}
 
-  gAvg_sharp_L = 0;
-  gAvg_sharp_M = 0; 
-  gAvg_sharp_R = 0;
+bool is_line_found(void)
+{ 
+  if (g_line_color_mode == WHITE_LINE)
+    return g_qtr_left.value < LINE_THRESHOLD || g_qtr_right.value < LINE_THRESHOLD;
+  return g_qtr_left.value > LINE_THRESHOLD || g_qtr_right.value > LINE_THRESHOLD;
+}
 
-  for(int i = 0; i < BATCH_SIZE; ++i)
+bool escape_line(const struct Motors_S *motors, uint32_t turn_duration_ms)
+{
+  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+  Movement_turn_right_backward_continuously(motors, MAX_SPEED);
+  UART_write("line is found, turning right \r\n");
+
+  HAL_Delay(turn_duration_ms);
+
+  UART_write("stopped turning \r\n");
+  UART_write("go forward\r\n");
+  Movement_go_forward_continuously(motors, MEDIUM_SPEED);
+  return false;
+}
+
+enum EnemyPosition get_enemy_position(void)
+{
+  if ((g_sharp_left.avg_value < ENEMY_THRESHOLD && g_sharp_middle.avg_value >= ENEMY_THRESHOLD && g_sharp_right.avg_value < ENEMY_THRESHOLD))
+    return FRONT;
+  if (g_sharp_left.avg_value >= ENEMY_THRESHOLD && g_sharp_right.avg_value >= ENEMY_THRESHOLD)
+    return FRONT;
+  if (g_sharp_right.avg_value >= ENEMY_THRESHOLD)
+    return RIGHT;
+  if (g_sharp_left.avg_value >= ENEMY_THRESHOLD)
+    return LEFT;
+  return NONE;
+}
+
+static bool kill_enemy(const struct Motors_S *motors, enum EnemyPosition enemy_pos)
+{
+
+  enum EnemyPosition movement_enemy_pos = NONE;
+  while (enemy_pos != NONE)
   {
-    gAvg_sharp_L += gSharp_L_vals[i];
-    gAvg_sharp_M += gSharp_M_vals[i];
-    gAvg_sharp_R += gSharp_R_vals[i];
-  }
-
-  gAvg_sharp_L /= BATCH_SIZE;
-  gAvg_sharp_M /= BATCH_SIZE;
-  gAvg_sharp_R /= BATCH_SIZE;
-}
-
-void transmit_sharp_readings(void)
-{
-    transmit_int("sharp1", gAvg_sharp_L);
-    transmit_int("sharp2", gAvg_sharp_M);
-    transmit_int("sharp3", gAvg_sharp_R);
-    HAL_UART_Transmit(&huart2, (uint8_t *)"\n", sizeof('\n'), 10);
-}
-
-void transmit_qtr_readings(void)
-{
-  transmit_int("qtr1", gQtr_L_val);
-  transmit_int("qtr2", gQtr_R_val);
-  HAL_UART_Transmit(&huart2, (uint8_t *)"\n", sizeof('\n'), 10);
-}
-
-bool isLine_found()
-{
-    if(gQtr_L_val < 1500 || gQtr_R_val < 1500)
+    if (enemy_pos != movement_enemy_pos)
     {
+      movement_enemy_pos = enemy_pos;
+      switch (enemy_pos)
+      {
+        case FRONT:
+          Movement_go_forward_continuously(motors, MAX_SPEED);
+          UART_write("enemy is in front \r\n");
+          break;
+
+        case RIGHT:
+          Movement_turn_right_forward_continuously(motors, MAX_SPEED);
+          UART_write("enemy is on the right \r\n");
+          break;
+
+        case LEFT:
+          Movement_turn_left_forward_continuously(motors, MAX_SPEED);
+          UART_write("enemy is on the left \r\n");
+          break;
+
+        default:
+          UART_write("enemy is not detected \r\n");
+          break;
+      }
+    }
+
+    Sensors_read_sharp_sensors_average();
+
+    enum EnemyPosition new_enemy_pos = get_enemy_position();
+    if (new_enemy_pos != enemy_pos)
+      enemy_pos = new_enemy_pos;
+
+    if (check_if_stop_battle())
+    {
+      Movement_stop(motors);
       return true;
     }
-    return false;
+  }
+  Movement_stop(motors);
+  return false;
 }
 
-int get_enemy_position(void)
-{
-  if(gAvg_sharp_L < 1000 && gAvg_sharp_M >= 1000 && gAvg_sharp_R < 1000) 
-  {
-    return F;
-  }
-  else if(gAvg_sharp_L >= 1000 && gAvg_sharp_R >= 1000) 
-  {
-    return F;
-  }
-  else if(gAvg_sharp_R >= 1000) 
-  {
-    return R;
-  }
-  else if(gAvg_sharp_L >= 1000) 
-  {
-    return L;
-  }
-  else 
-  {
-    return None;
-  }
-}
-
-void set_all_motors(struct Timers_S timers, uint32_t left_plus, uint32_t right_plus, uint32_t left_minus, uint32_t right_minus)
-{
-  __HAL_TIM_SET_COMPARE(timers.left_plus.htim, timers.left_plus.channel, left_plus);
-  __HAL_TIM_SET_COMPARE(timers.right_plus.htim, timers.right_plus.channel, right_plus);
-  __HAL_TIM_SET_COMPARE(timers.left_minus.htim, timers.left_minus.channel, left_minus);
-  __HAL_TIM_SET_COMPARE(timers.right_minus.htim, timers.right_minus.channel, right_minus);
-}
-
-void stop_motors(struct Timers_S timers)
-{
-  set_all_motors(timers, 0, 0, 0, 0);
-}
-
-void move_time(struct Timers_S timers, int time, int left_plus, int right_plus, int left_minus, int right_minus)
-{
-  set_all_motors(timers, left_plus, right_plus, left_minus, right_minus);
-  HAL_Delay(time);
-  stop_motors(timers);
-}
-
-void move_enemy(struct Timers_S timers, int enemy_pos, int left_plus, int right_plus, int left_minus, int right_minus)
-{
-  set_all_motors(timers, left_plus, right_plus, left_minus, right_minus);
-
-  do
-  {
-      get_avg_sharp_readings();
-  } 
-  while(get_enemy_position() == enemy_pos);
-
-  stop_motors(timers);
-}
-
-void go_forward(struct Timers_S timers, bool isEnemy_detected, int enemy_pos, int forward_time)
-{
-  if(isEnemy_detected)
-  {
-    move_enemy(timers, enemy_pos, 100, 100, 0, 0);
-  }
-  else
-  { 
-    move_time(timers, forward_time, 100, 100, 0, 0);
-  }
-}
-
-void turn_right_forward(struct Timers_S timers, bool isEnemy_detected, int enemy_pos, int turn_time)
-{
-  if(isEnemy_detected)
-  {
-    move_enemy(timers, enemy_pos, 100, 0, 0, 0);
-  }
-  else
-  {
-    move_time(timers, turn_time, 100, 0, 0, 0);
-  }
-}
-
-void turn_left_forward(struct Timers_S timers, bool isEnemy_detected, int enemy_pos, int turn_time)
-{
-  if(isEnemy_detected)
-  {
-    move_enemy(timers, enemy_pos, 0, 100, 0, 0);
-  }
-  else
-  {
-    move_time(timers, turn_time, 0, 100, 0, 0);
-  }
-}
-
-void turn_right_backward(struct Timers_S timers, bool isEnemy_detected, int enemy_pos, int turn_time)
-{
-  if(isEnemy_detected)
-  {
-    move_enemy(timers, enemy_pos, 0, 0, 100, 0);
-  }
-  else
-  {
-    move_time(timers, turn_time, 0, 0, 100, 0);
-  }
-}
-
-void turn_left_backward(struct Timers_S timers, bool isEnemy_detected, int enemy_pos, int turn_time)
-{
-  if(isEnemy_detected)
-  {
-    move_enemy(timers, enemy_pos, 0, 0, 0, 100);
-  }
-  else
-  {
-    move_time(timers, turn_time, 0, 0, 0, 100);
-  }
-}
-
-void go_back(struct Timers_S timers, int back_time)
-{
-  move_time(timers, back_time, 0, 0, 100, 100);
-}
-
-void test_motor(TIM_HandleTypeDef *pTim_1, uint32_t channel_1, uint32_t power, char motor[], char direction[1])
-{
-  char name[80];
-  strcpy(name, "starting ");
-  strcat(name, motor);
-  strcat(name, " motor ");
-  strcat(name, direction);
-  strcat(name, "\n");
-  puts(name);
-  transmit_string(name);
-
-  __HAL_TIM_SET_COMPARE(pTim_1, channel_1, power);
-
-  HAL_Delay(5000);
-
-  __HAL_TIM_SET_COMPARE(pTim_1, channel_1, 0);
-
-  
-  memset(name,0,sizeof(name));
-  strcpy(name, "stopping ");
-  strcat(name, motor);
-  strcat(name, " motor ");
-  strcat(name, direction);
-  strcat(name, "\n");
-  puts(name);
-  transmit_string(name);
-
-  HAL_Delay(1000);
-}
-
-void kill_enemy(struct Timers_S timers, int enemy_pos)
-{
-  switch (enemy_pos)
-  {
-    case F:
-      transmit_string("enemy is in front \r\n");
-      go_forward(timers, true, enemy_pos, NS);
-      break;
-
-    case R:
-      transmit_string("enemy is on the right \r\n");
-      turn_right_forward(timers, true, enemy_pos, NS);
-      break;
-
-    case L:
-      transmit_string("enemy is on the left \r\n");
-      turn_left_forward(timers, true, enemy_pos, NS);
-      break;
-  }
-}
-
-void search_for_enemy(struct Timers_S timers)
-{
-  turn_left_forward(timers, true, None, NS);
-}
-
-void test(struct Timer_S timers[])
-{
-  transmit_string("MOTORS TEST");
-  test_motor(timers[0].htim, timers[0].channel, 100, "left", "+");
-  test_motor(timers[1].htim, timers[1].channel, 100, "left", "-");
-  test_motor(timers[2].htim, timers[2].channel, 100, "right", "+");
-  test_motor(timers[3].htim, timers[3].channel, 100, "right", "-");
-
-  transmit_string("QTR SENSORS TEST");
-  for(int i = 0; i < 5; ++i)
-  {
-    get_pololu_readings();
-    transmit_qtr_readings();
-    HAL_Delay(100);
-  }
-
-  transmit_string("SHARP SENSORS TEST");
-  for(int i = 0; i < 5; ++i)
-  {
-    get_avg_sharp_readings();
-    transmit_sharp_readings();
-    HAL_Delay(100);
-  }
-
-  transmit_string("BUTTON TEST");
-  while(!isBtn_on()) 
-  {
-    HAL_Delay(20);
-  }
-}
 /* USER CODE END 0 */
 
 /**
@@ -498,87 +203,64 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART2_UART_Init();
   MX_TIM1_Init();
   MX_TIM3_Init();
-  MX_TIM4_Init();
   MX_ADC1_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  struct Timers_S timers = {
-    {&htim1, TIM_CHANNEL_2},
-    {&htim3, TIM_CHANNEL_2},
-    {&htim1, TIM_CHANNEL_3},
-    {&htim4, TIM_CHANNEL_1}
-  };
+  Sensors_init();
+  Sensors_set_line_color_mode(BLACK_LINE);
+  Movement_init(&g_motors);
 
-  reset(timers);
-  init(timers);
-
-  //test(timers);
-
-  while(!isBtn_on()) 
+  while(!Sensors_button_on())
   {
-    HAL_Delay(50);
+    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    HAL_Delay(START_BUTTON_POLL_DELAY_MS);
+    UART_write("Waiting for start button press\r\n");
   }
 
-  transmit_string("------------START------------\r\n");
+  while (Sensors_button_on())
+    HAL_Delay(START_BUTTON_POLL_DELAY_MS);
+
+  //RobotTest_general_test(&g_motors);
+  //return 0;
+
+  UART_write("------------START------------\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  int i = 0;
-  __HAL_TIM_SET_COMPARE(timers.left_plus.htim, timers.left_plus.channel, 60);
-  __HAL_TIM_SET_COMPARE(timers.right_plus.htim, timers.right_plus.channel, 60);
-
+  Movement_go_forward_continuously(&g_motors, MEDIUM_SPEED);
   while (1)
   {
-      if(i > 100 && isBtn_on())
-      {
-        transmit_string("------------STOP------------\r\n");
-        break;
-      }
+      if (check_if_stop_battle()) break;
 
-      get_pololu_readings();
-      get_avg_sharp_readings();
+      Sensors_read_sharp_sensors_average();
+      enum EnemyPosition enemy_pos = get_enemy_position();
 
-      int enemy_pos = get_enemy_position();
-
-      //change for opposite colors
-      if (enemy_pos == None && isLine_found())
-      {
-          stop_motors(timers);
-          transmit_string("line is found, turning left \r\n");
-          go_back(timers, 100);
-          turn_left_backward(timers, false, None, 300);
-          transmit_string("stopped turning \r\n");
-          transmit_string("go forward\r\n");
-          __HAL_TIM_SET_COMPARE(timers.left_plus.htim, timers.left_plus.channel, 60);
-          __HAL_TIM_SET_COMPARE(timers.right_plus.htim, timers.right_plus.channel, 60);
-      }
-
-      transmit_sharp_readings();
-      transmit_qtr_readings();
+      Sensors_read_qtr_sensors();
+      if (is_line_found() && enemy_pos == NONE)
+        if (escape_line(&g_motors, LINE_ESCAPE_TURN_DURATION_MS)) break;
+        
+      if (check_if_stop_battle()) break;
       
-      
-      if(enemy_pos != None)
+      if(enemy_pos != NONE)
       {
-        transmit_string("there is enemy \r\n");
-        kill_enemy(timers, enemy_pos);
-        transmit_string("after killing enemy \r\n");
-        __HAL_TIM_SET_COMPARE(timers.left_plus.htim, timers.left_plus.channel, 60);
-        __HAL_TIM_SET_COMPARE(timers.right_plus.htim, timers.right_plus.channel, 60);
+        if (kill_enemy(&g_motors, enemy_pos)) break;
+        Movement_go_forward_continuously(&g_motors, MEDIUM_SPEED);
+        UART_write("after killing enemy \r\n");
       }
       
-      HAL_Delay(5);
-      i++;
-      if(i == 1000) break;
+      Sensors_read_qtr_sensors();
+      if (is_line_found())
+        if (escape_line(&g_motors, LINE_ESCAPE_TURN_DURATION_MS)) break;
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
 
-  transmit_string("end of while \r\n");
-  reset(timers);
+  UART_write("end of while \r\n");
+  Movement_reset(&g_motors);
   
   /* USER CODE END 3 */
 }
@@ -753,7 +435,7 @@ static void MX_TIM1_Init(void)
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
   sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -831,6 +513,10 @@ static void MX_TIM3_Init(void)
   sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
@@ -839,65 +525,6 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 2 */
   HAL_TIM_MspPostInit(&htim3);
-
-}
-
-/**
-  * @brief TIM4 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM4_Init(void)
-{
-
-  /* USER CODE BEGIN TIM4_Init 0 */
-
-  /* USER CODE END TIM4_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-
-  /* USER CODE BEGIN TIM4_Init 1 */
-
-  /* USER CODE END TIM4_Init 1 */
-  htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 7;
-  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 99;
-  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM4_Init 2 */
-
-  /* USER CODE END TIM4_Init 2 */
-  HAL_TIM_MspPostInit(&htim4);
 
 }
 
@@ -973,7 +600,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : D4_Pin */
   GPIO_InitStruct.Pin = D4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(D4_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
@@ -992,11 +619,7 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+  UART_write("HAL initialization error\r\n");
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT
