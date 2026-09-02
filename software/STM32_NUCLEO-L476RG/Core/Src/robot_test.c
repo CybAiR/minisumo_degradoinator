@@ -4,97 +4,103 @@
 #include "time_utils.h"
 #include "uart.h"
 
-static void RobotTest_single_motor(const struct Timer_S *motor, uint32_t power, uint32_t run_ms, uint32_t pause_ms)
+static void robotTestSingleMotor(const struct timer_S* pMotor,
+                                 uint32_t              power,
+                                 uint32_t              run_ms,
+                                 uint32_t              pause_ms)
 {
-  UART_write("starting ");
-  UART_write(motor->label);
-  UART_write("\r\n");
+    uartWrite("starting ");
+    uartWrite(pMotor->pLabel);
+    uartWrite("\r\n");
 
-  __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, power);
-  HAL_Delay(run_ms);
-  __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, 0);
+    __HAL_TIM_SET_COMPARE(pMotor->pHtim, pMotor->channel, power);
+    HAL_Delay(run_ms);
+    __HAL_TIM_SET_COMPARE(pMotor->pHtim, pMotor->channel, 0);
 
-  UART_write("stopping ");
-  UART_write(motor->label);
-  UART_write("\r\n");
-  HAL_Delay(pause_ms);
+    uartWrite("stopping ");
+    uartWrite(pMotor->pLabel);
+    uartWrite("\r\n");
+    HAL_Delay(pause_ms);
 }
 
-void RobotTest_all_motors(const struct Motors_S *motors, uint32_t power, uint32_t run_ms, uint32_t pause_ms)
+void robotTestAllMotors(const struct motors_S* pMotors,
+                        uint32_t               power,
+                        uint32_t               run_ms,
+                        uint32_t               pause_ms)
 {
-    RobotTest_single_motor(&motors->left_forward, power, run_ms, pause_ms);
-    RobotTest_single_motor(&motors->left_backward, power, run_ms, pause_ms);
-    RobotTest_single_motor(&motors->right_forward, power, run_ms, pause_ms);
-    RobotTest_single_motor(&motors->right_backward, power, run_ms, pause_ms);
+    robotTestSingleMotor(&pMotors->leftForward, power, run_ms, pause_ms);
+    robotTestSingleMotor(&pMotors->leftBackward, power, run_ms, pause_ms);
+    robotTestSingleMotor(&pMotors->rightForward, power, run_ms, pause_ms);
+    robotTestSingleMotor(&pMotors->rightBackward, power, run_ms, pause_ms);
 }
 
-void RobotTest_qtr_sensors(void)
+void robotTestQtrSensors(void)
 {
-  Sensors_read_qtr_sensors();
-  UART_write_qtr(g_qtr_left.value, g_qtr_right.value);
+    sensorsReadQtrSensors();
+    uartWriteQtr(gQtrLeft.value, gQtrRight.value);
 }
 
-void RobotTest_sharp_sensors(void)
+void robotTestSharpSensors(void)
 {
-  Sensors_read_sharp_sensors_average();
-  UART_write_sharp(g_sharp_left.avg_value, g_sharp_middle.avg_value, g_sharp_right.avg_value);
+    sensorsReadSharpSensorsAverage();
+    uartWriteSharp(gSharpLeft.avg_value, gSharpMiddle.avg_value, gSharpRight.avg_value);
 }
 
-void RobotTest_button(void)
+void robotTestButton(void)
 {
-  UART_write(Sensors_button_on() ? "button on\r\n" : "button off\r\n");
+    uartWrite(sensorsButtonOn() ? "button on\r\n" : "button off\r\n");
 }
 
-void RobotTest_all_movements(const struct Motors_S *motors, uint32_t speed, uint32_t duration_ms)
+void robotTestAllMovements(const struct motors_S* pMotors, uint32_t speed, uint32_t duration_ms)
 {
-  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-  Movement_go_forward_for(motors, speed, duration_ms);
-  Movement_turn_right_forward_for(motors, speed, duration_ms);
-  Movement_turn_left_forward_for(motors, speed, duration_ms);
-  Movement_turn_right_backward_for(motors, speed, duration_ms);
-  Movement_turn_left_backward_for(motors, speed, duration_ms);
-  Movement_go_back_for(motors, speed, duration_ms);
-  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-  Movement_go_forward_continuously(motors, speed);
-  HAL_Delay(duration_ms);
-  Movement_turn_right_forward_continuously(motors, speed);
-  HAL_Delay(duration_ms);
-  Movement_turn_left_forward_continuously(motors, speed);
-  HAL_Delay(duration_ms);
-  Movement_turn_right_backward_continuously(motors, speed);
-  HAL_Delay(duration_ms);
-  Movement_turn_left_backward_continuously(motors, speed);
-  HAL_Delay(duration_ms);
-  Movement_go_back_continuously(motors, speed);
-  HAL_Delay(duration_ms);
-  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-  Movement_stop(motors);
-}
-
-void RobotTest_general_test(const struct Motors_S *motors)
-{
-  const uint32_t motor_test_power = MAX_SPEED;
-  const uint32_t motor_test_run_ms = 5000U;
-  const uint32_t motor_test_pause_ms = 1000U;
-  const uint32_t sensor_test_run_ms = 10000U;
-  const uint32_t button_poll_interval_ms = 100U;
-  const uint32_t sensor_read_interval_ms = 5U;
-
-  while (!Sensors_button_on())
-  {
     HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-    HAL_Delay(button_poll_interval_ms);
-  }
-
-  RobotTest_all_motors(motors, motor_test_power, motor_test_run_ms, motor_test_pause_ms);
-
-  uint32_t sensor_test_start = HAL_GetTick();
-  while (Time_elapsed_ms(sensor_test_start) < sensor_test_run_ms)
-  {
+    movementDriveFor(pMotors, MOVEMENT_FORWARD, speed, duration_ms);
+    movementDriveFor(pMotors, MOVEMENT_FORWARD_RIGHT, speed, duration_ms);
+    movementDriveFor(pMotors, MOVEMENT_FORWARD_LEFT, speed, duration_ms);
+    movementDriveFor(pMotors, MOVEMENT_BACKWARD_RIGHT, speed, duration_ms);
+    movementDriveFor(pMotors, MOVEMENT_BACKWARD_LEFT, speed, duration_ms);
+    movementDriveFor(pMotors, MOVEMENT_BACKWARD, speed, duration_ms);
     HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-    RobotTest_qtr_sensors();
-    RobotTest_sharp_sensors();
-    HAL_Delay(sensor_read_interval_ms);
-  }
+    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    movementDriveContinuously(pMotors, MOVEMENT_FORWARD, speed);
+    HAL_Delay(duration_ms);
+    movementDriveContinuously(pMotors, MOVEMENT_FORWARD_RIGHT, speed);
+    HAL_Delay(duration_ms);
+    movementDriveContinuously(pMotors, MOVEMENT_FORWARD_LEFT, speed);
+    HAL_Delay(duration_ms);
+    movementDriveContinuously(pMotors, MOVEMENT_BACKWARD_RIGHT, speed);
+    HAL_Delay(duration_ms);
+    movementDriveContinuously(pMotors, MOVEMENT_BACKWARD_LEFT, speed);
+    HAL_Delay(duration_ms);
+    movementDriveContinuously(pMotors, MOVEMENT_BACKWARD, speed);
+    HAL_Delay(duration_ms);
+    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    movementStop(pMotors);
+}
+
+void robotTestGeneralTest(const struct motors_S* pMotors)
+{
+    const uint32_t motor_test_power        = MAX_SPEED;
+    const uint32_t motor_test_run_ms       = 5000U;
+    const uint32_t motor_test_pause_ms     = 1000U;
+    const uint32_t sensor_test_run_ms      = 10000U;
+    const uint32_t button_poll_interval_ms = 100U;
+    const uint32_t sensor_read_interval_ms = 5U;
+
+    while (!sensorsButtonOn())
+    {
+        HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+        HAL_Delay(button_poll_interval_ms);
+    }
+
+    robotTestAllMotors(pMotors, motor_test_power, motor_test_run_ms, motor_test_pause_ms);
+
+    uint32_t sensor_test_start = HAL_GetTick();
+    while (timeElapsedMs(sensor_test_start) < sensor_test_run_ms)
+    {
+        HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+        robotTestQtrSensors();
+        robotTestSharpSensors();
+        HAL_Delay(sensor_read_interval_ms);
+    }
 }

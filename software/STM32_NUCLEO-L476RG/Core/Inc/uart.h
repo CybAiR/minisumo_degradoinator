@@ -3,9 +3,9 @@
 
 #include "main.h"
 
-void UART_write(const char *text);
-void UART_write_value(const char *name, uint32_t value);
-void UART_write_qtr(uint32_t left, uint32_t right);
-void UART_write_sharp(uint32_t left, uint32_t middle, uint32_t right);
+void uartWrite(const char* pText);
+void uartWriteValue(const char* pName, uint32_t value);
+void uartWriteQtr(uint32_t left, uint32_t right);
+void uartWriteSharp(uint32_t left, uint32_t middle, uint32_t right);
 
 #endif

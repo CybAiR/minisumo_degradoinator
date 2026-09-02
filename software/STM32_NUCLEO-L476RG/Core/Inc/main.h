@@ -1,29 +1,30 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.h
-  * @brief          : Header for main.c file.
-  *                   This file contains the common defines of the application.
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.h
+ * @brief          : Header for main.c file.
+ *                   This file contains the common defines of the application.
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __MAIN_H
-#define __MAIN_H
+#ifndef MAIN_H
+#define MAIN_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 /* Includes ------------------------------------------------------------------*/
@@ -49,7 +50,7 @@ extern "C" {
 
 /* USER CODE END EM */
 
-void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim);
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
@@ -59,36 +60,36 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define B1_Pin GPIO_PIN_13
-#define B1_GPIO_Port GPIOC
-#define A5_Pin GPIO_PIN_0
-#define A5_GPIO_Port GPIOC
-#define A4_Pin GPIO_PIN_1
-#define A4_GPIO_Port GPIOC
-#define A0_Pin GPIO_PIN_0
-#define A0_GPIO_Port GPIOA
-#define A2_Pin GPIO_PIN_4
-#define A2_GPIO_Port GPIOA
-#define LD2_Pin GPIO_PIN_5
+#define B1_Pin        GPIO_PIN_13
+#define B1_GPIO_Port  GPIOC
+#define A5_Pin        GPIO_PIN_0
+#define A5_GPIO_Port  GPIOC
+#define A4_Pin        GPIO_PIN_1
+#define A4_GPIO_Port  GPIOC
+#define A0_Pin        GPIO_PIN_0
+#define A0_GPIO_Port  GPIOA
+#define A2_Pin        GPIO_PIN_4
+#define A2_GPIO_Port  GPIOA
+#define LD2_Pin       GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
-#define D12_Pin GPIO_PIN_6
+#define D12_Pin       GPIO_PIN_6
 #define D12_GPIO_Port GPIOA
-#define A3_Pin GPIO_PIN_0
-#define A3_GPIO_Port GPIOB
-#define D9_Pin GPIO_PIN_7
-#define D9_GPIO_Port GPIOC
-#define D7_Pin GPIO_PIN_8
-#define D7_GPIO_Port GPIOA
-#define D2_Pin GPIO_PIN_10
-#define D2_GPIO_Port GPIOA
-#define TMS_Pin GPIO_PIN_13
+#define A3_Pin        GPIO_PIN_0
+#define A3_GPIO_Port  GPIOB
+#define D9_Pin        GPIO_PIN_7
+#define D9_GPIO_Port  GPIOC
+#define D7_Pin        GPIO_PIN_8
+#define D7_GPIO_Port  GPIOA
+#define D2_Pin        GPIO_PIN_10
+#define D2_GPIO_Port  GPIOA
+#define TMS_Pin       GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
-#define TCK_Pin GPIO_PIN_14
+#define TCK_Pin       GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
-#define SWO_Pin GPIO_PIN_3
+#define SWO_Pin       GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
-#define D4_Pin GPIO_PIN_5
-#define D4_GPIO_Port GPIOB
+#define D4_Pin        GPIO_PIN_5
+#define D4_GPIO_Port  GPIOB
 
 /* USER CODE BEGIN Private defines */
 
@@ -98,4 +99,4 @@ void Error_Handler(void);
 }
 #endif
 
-#endif /* __MAIN_H */
+#endif /* MAIN_H */
