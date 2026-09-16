@@ -3,9 +3,9 @@
 
 #include "main.h"
 
-static inline uint32_t timeElapsedMs(uint32_t start_tick)
+static inline uint32_t timeElapsedMs(uint32_t startTick)
 {
-    return HAL_GetTick() - start_tick;
+    return HAL_GetTick() - startTick;
 }
 
 #endif

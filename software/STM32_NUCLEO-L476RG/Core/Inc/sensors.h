@@ -22,7 +22,7 @@ struct analogSensor_S
 {
     uint32_t                channel;
     uint32_t                value;
-    uint32_t                avg_value;
+    uint32_t                averageValue;
     enum analogSensorType_E type;
     enum analogSensorName_E name;
 };
@@ -33,15 +33,15 @@ enum lineColorMode_E
     WHITE_LINE
 };
 
-void sensorsInit(void);
-bool sensorsButtonOn(void);
-void sensorsReadQtrSensors(void);
-void sensorsReadSharpSensorsAverage(void);
-void sensorsSetLineColorMode(enum lineColorMode_E mode);
+void                 sensorsInit(void);
+bool                 sensorsButtonOn(void);
+void                 sensorsReadQtrSensors(void);
+void                 sensorsReadSharpSensorsAverage(void);
+void                 sensorsSetLineColorMode(enum lineColorMode_E mode);
+enum lineColorMode_E sensorsGetLineColorMode(void);
 
-extern enum lineColorMode_E gLine_color_mode;
-
-extern struct analogSensor_S gQtrLeft, gQtrRight;
-extern struct analogSensor_S gSharpLeft, gSharpMiddle, gSharpRight;
+/* Return cached readings without sampling; unsupported sensor names return zero. */
+uint32_t sensorsGetQtrValue(enum analogSensorName_E name);
+uint32_t sensorsGetSharpAverageValue(enum analogSensorName_E name);
 
 #endif

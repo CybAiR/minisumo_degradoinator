@@ -8,29 +8,29 @@
 
 extern ADC_HandleTypeDef hadc1;
 
-enum lineColorMode_E  gLine_color_mode = WHITE_LINE;
-struct analogSensor_S gQtrLeft         = {0};
-struct analogSensor_S gQtrRight        = {0};
-struct analogSensor_S gSharpLeft       = {0};
-struct analogSensor_S gSharpMiddle     = {0};
-struct analogSensor_S gSharpRight      = {0};
+static enum lineColorMode_E  sLineColorMode = WHITE_LINE;
+static struct analogSensor_S sQtrLeft       = {0};
+static struct analogSensor_S sQtrRight      = {0};
+static struct analogSensor_S sSharpLeft     = {0};
+static struct analogSensor_S sSharpMiddle   = {0};
+static struct analogSensor_S sSharpRight    = {0};
 
-static bool     sIsButton_state_         = false;
-static bool     sIsButton_candidate_     = false;
-static uint32_t sButton_candidate_since_ = 0U;
+static bool     sIsButtonState        = false;
+static bool     sIsButtonCandidate    = false;
+static uint32_t sButtonCandidateSince = 0U;
 
 void sensorsInit(void)
 {
-    gQtrLeft = (struct analogSensor_S){
+    sQtrLeft = (struct analogSensor_S){
         .channel = ADC_CHANNEL_5, .type = SENSOR_TYPE_QTR, .name = SENSOR_LEFT};
-    gQtrRight = (struct analogSensor_S){
+    sQtrRight = (struct analogSensor_S){
         .channel = ADC_CHANNEL_9, .type = SENSOR_TYPE_QTR, .name = SENSOR_RIGHT};
 
-    gSharpLeft = (struct analogSensor_S){
+    sSharpLeft = (struct analogSensor_S){
         .channel = ADC_CHANNEL_15, .type = SENSOR_TYPE_SHARP, .name = SENSOR_LEFT};
-    gSharpMiddle = (struct analogSensor_S){
+    sSharpMiddle = (struct analogSensor_S){
         .channel = ADC_CHANNEL_2, .type = SENSOR_TYPE_SHARP, .name = SENSOR_MIDDLE};
-    gSharpRight = (struct analogSensor_S){
+    sSharpRight = (struct analogSensor_S){
         .channel = ADC_CHANNEL_1, .type = SENSOR_TYPE_SHARP, .name = SENSOR_RIGHT};
 
     if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
@@ -69,11 +69,11 @@ static void sensorsSelectAdcChannel(const struct analogSensor_S* pSensor)
 
 static void sensorsRead(struct analogSensor_S* pSensor)
 {
-    uint32_t discarded_value = 0U;
-    uint32_t value           = 0U;
+    uint32_t discardedValue = 0U;
+    uint32_t value          = 0U;
 
     sensorsSelectAdcChannel(pSensor);
-    sensorsReadAdc(&discarded_value);
+    sensorsReadAdc(&discardedValue);
     sensorsReadAdc(&value);
 
     pSensor->value = value;
@@ -89,40 +89,73 @@ static void sensorsReadAverage(struct analogSensor_S* pSensor)
         sum += pSensor->value;
     }
 
-    pSensor->avg_value = sum / SHARP_AVERAGE_SAMPLE_COUNT;
+    pSensor->averageValue = sum / SHARP_AVERAGE_SAMPLE_COUNT;
 }
 
 void sensorsReadQtrSensors(void)
 {
-    sensorsRead(&gQtrLeft);
-    sensorsRead(&gQtrRight);
+    sensorsRead(&sQtrLeft);
+    sensorsRead(&sQtrRight);
 }
 
 void sensorsReadSharpSensorsAverage(void)
 {
-    sensorsReadAverage(&gSharpLeft);
-    sensorsReadAverage(&gSharpMiddle);
-    sensorsReadAverage(&gSharpRight);
+    sensorsReadAverage(&sSharpLeft);
+    sensorsReadAverage(&sSharpMiddle);
+    sensorsReadAverage(&sSharpRight);
 }
 
 void sensorsSetLineColorMode(enum lineColorMode_E mode)
 {
-    gLine_color_mode = mode;
+    sLineColorMode = mode;
+}
+
+enum lineColorMode_E sensorsGetLineColorMode(void)
+{
+    return sLineColorMode;
+}
+
+uint32_t sensorsGetQtrValue(enum analogSensorName_E name)
+{
+    switch (name)
+    {
+        case SENSOR_LEFT:
+            return sQtrLeft.value;
+        case SENSOR_RIGHT:
+            return sQtrRight.value;
+        default:
+            return 0U;
+    }
+}
+
+uint32_t sensorsGetSharpAverageValue(enum analogSensorName_E name)
+{
+    switch (name)
+    {
+        case SENSOR_LEFT:
+            return sSharpLeft.averageValue;
+        case SENSOR_MIDDLE:
+            return sSharpMiddle.averageValue;
+        case SENSOR_RIGHT:
+            return sSharpRight.averageValue;
+        default:
+            return 0U;
+    }
 }
 
 bool sensorsButtonOn(void)
 {
-    bool isRaw_state = HAL_GPIO_ReadPin(D4_GPIO_Port, D4_Pin) == GPIO_PIN_SET;
+    bool isRawState = HAL_GPIO_ReadPin(D4_GPIO_Port, D4_Pin) == GPIO_PIN_SET;
 
-    if (isRaw_state != sIsButton_candidate_)
+    if (isRawState != sIsButtonCandidate)
     {
-        sIsButton_candidate_     = isRaw_state;
-        sButton_candidate_since_ = HAL_GetTick();
+        sIsButtonCandidate    = isRawState;
+        sButtonCandidateSince = HAL_GetTick();
     }
 
-    if (sIsButton_state_ != sIsButton_candidate_ &&
-        timeElapsedMs(sButton_candidate_since_) >= BUTTON_DEBOUNCE_DURATION_MS)
-        sIsButton_state_ = sIsButton_candidate_;
+    if (sIsButtonState != sIsButtonCandidate &&
+        timeElapsedMs(sButtonCandidateSince) >= BUTTON_DEBOUNCE_DURATION_MS)
+        sIsButtonState = sIsButtonCandidate;
 
-    return sIsButton_state_;
+    return sIsButtonState;
 }

@@ -22,9 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "movement.h"
-#include "robot_test.h"
 #include "sensors.h"
-#include "time_utils.h"
 #include "uart.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -37,10 +35,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define START_BUTTON_POLL_DELAY_MS    100U
-#define LINE_ESCAPE_STOP_DURATION_MS  5U
-#define LINE_ESCAPE_TURN_DURATION_MS  120U
-#define MOVE_BEFORE_TURN_MS           300U
+#define START_BUTTON_POLL_DELAY_MS   100U
+#define LINE_ESCAPE_STOP_DURATION_MS 5U
+#define LINE_ESCAPE_TURN_DURATION_MS 120U
+#define MOVE_BEFORE_TURN_MS          300U
 
 #define LINE_THRESHOLD  1500U
 #define ENEMY_THRESHOLD 1000U
@@ -90,143 +88,136 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-bool checkIfStopBattle(void)
+static bool checkIfStopBattle(void)
 {
-    if (sensorsButtonOn())
-    {
-        uartWrite("------------STOP------------\r\n");
-        return true;
-    }
-    return false;
+    return sensorsButtonOn();
 }
 
 static enum linePosition_E getLinePosition(void)
 {
-    bool isLeft_found  = false;
-    bool isRight_found = false;
+    bool     isLeftFound  = false;
+    bool     isRightFound = false;
+    uint32_t leftValue    = sensorsGetQtrValue(SENSOR_LEFT);
+    uint32_t rightValue   = sensorsGetQtrValue(SENSOR_RIGHT);
 
-    if (gLine_color_mode == WHITE_LINE)
+    if (sensorsGetLineColorMode() == WHITE_LINE)
     {
-        isLeft_found  = gQtrLeft.value < LINE_THRESHOLD;
-        isRight_found = gQtrRight.value < LINE_THRESHOLD;
+        isLeftFound  = leftValue < LINE_THRESHOLD;
+        isRightFound = rightValue < LINE_THRESHOLD;
     }
     else
     {
-        isLeft_found  = gQtrLeft.value > LINE_THRESHOLD;
-        isRight_found = gQtrRight.value > LINE_THRESHOLD;
+        isLeftFound  = leftValue > LINE_THRESHOLD;
+        isRightFound = rightValue > LINE_THRESHOLD;
     }
 
-    if (isLeft_found && isRight_found)
+    if (isLeftFound && isRightFound)
         return LINE_FOUND_BOTH;
-    if (isLeft_found)
+    if (isLeftFound)
         return LINE_FOUND_LEFT;
-    if (isRight_found)
+    if (isRightFound)
         return LINE_FOUND_RIGHT;
     return LINE_NOT_FOUND;
 }
 
-bool isLineFound(void)
+static bool isLineFound(void)
 {
     return getLinePosition() != LINE_NOT_FOUND;
 }
 
-bool escapeLine(const struct motors_S* pMotors, uint32_t turn_duration_ms)
+static bool escapeLine(void)
 {
-    enum linePosition_E line_position = getLinePosition();
+    enum linePosition_E linePosition = getLinePosition();
 
-    while (line_position != LINE_NOT_FOUND)
+    while (linePosition != LINE_NOT_FOUND)
     {
         HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-        movementStop(pMotors);
+        movementStop();
         HAL_Delay(LINE_ESCAPE_STOP_DURATION_MS);
-        movementDriveFor(pMotors, MOVEMENT_BACKWARD, MAX_SPEED, MOVE_BEFORE_TURN_MS);
+        movementDriveFor(MOVEMENT_BACKWARD, MAX_SPEED, MOVE_BEFORE_TURN_MS);
 
         if (checkIfStopBattle())
         {
-            movementStop(pMotors);
+            movementStop();
             return true;
         }
 
-        if (line_position == LINE_FOUND_LEFT)
+        if (linePosition == LINE_FOUND_LEFT)
         {
-            uartWrite("line found on the left, turning right\r\n");
-            movementDriveFor(pMotors, MOVEMENT_ROTATE_RIGHT, MAX_SPEED, turn_duration_ms);
+            movementDriveFor(MOVEMENT_ROTATE_RIGHT, MAX_SPEED, LINE_ESCAPE_TURN_DURATION_MS);
         }
         else
         {
-            uartWrite("line found on the right, turning left\r\n");
-            movementDriveFor(pMotors, MOVEMENT_ROTATE_LEFT, MAX_SPEED, turn_duration_ms);
+            movementDriveFor(MOVEMENT_ROTATE_LEFT, MAX_SPEED, LINE_ESCAPE_TURN_DURATION_MS);
         }
 
-        movementStop(pMotors);
-        uartWrite("stopped turning\r\n");
+        movementStop();
         sensorsReadQtrSensors();
-        line_position = getLinePosition();
+        linePosition = getLinePosition();
     }
 
-    uartWrite("go forward\r\n");
-    movementDriveContinuously(pMotors, MOVEMENT_FORWARD, MEDIUM_SPEED);
+    movementDriveContinuously(MOVEMENT_FORWARD, MEDIUM_SPEED);
     return false;
 }
 
-enum enemyPosition_E getEnemyPosition(void)
+static enum enemyPosition_E getEnemyPosition(void)
 {
-    if ((gSharpLeft.avg_value < ENEMY_THRESHOLD && gSharpMiddle.avg_value >= ENEMY_THRESHOLD &&
-         gSharpRight.avg_value < ENEMY_THRESHOLD))
+    uint32_t leftValue   = sensorsGetSharpAverageValue(SENSOR_LEFT);
+    uint32_t middleValue = sensorsGetSharpAverageValue(SENSOR_MIDDLE);
+    uint32_t rightValue  = sensorsGetSharpAverageValue(SENSOR_RIGHT);
+
+    if ((leftValue < ENEMY_THRESHOLD && middleValue >= ENEMY_THRESHOLD &&
+         rightValue < ENEMY_THRESHOLD))
         return FRONT;
-    if (gSharpLeft.avg_value >= ENEMY_THRESHOLD && gSharpRight.avg_value >= ENEMY_THRESHOLD)
+    if (leftValue >= ENEMY_THRESHOLD && rightValue >= ENEMY_THRESHOLD)
         return FRONT;
-    if (gSharpRight.avg_value >= ENEMY_THRESHOLD)
+    if (rightValue >= ENEMY_THRESHOLD)
         return RIGHT;
-    if (gSharpLeft.avg_value >= ENEMY_THRESHOLD)
+    if (leftValue >= ENEMY_THRESHOLD)
         return LEFT;
     return NONE;
 }
 
-static bool killEnemy(const struct motors_S* pMotors, enum enemyPosition_E enemy_pos)
+static bool killEnemy(enum enemyPosition_E enemyPosition)
 {
-    enum enemyPosition_E movement_enemy_pos = NONE;
-    while (enemy_pos != NONE)
+    enum enemyPosition_E movementEnemyPosition = NONE;
+    while (enemyPosition != NONE)
     {
-        if (enemy_pos != movement_enemy_pos)
+        if (enemyPosition != movementEnemyPosition)
         {
-            movement_enemy_pos = enemy_pos;
-            switch (enemy_pos)
+            movementEnemyPosition = enemyPosition;
+            switch (enemyPosition)
             {
                 case FRONT:
-                    movementDriveContinuously(pMotors, MOVEMENT_FORWARD, MAX_SPEED);
-                    uartWrite("enemy is in front \r\n");
+                    movementDriveContinuously(MOVEMENT_FORWARD, MAX_SPEED);
                     break;
 
                 case RIGHT:
-                    movementDriveContinuously(pMotors, MOVEMENT_FORWARD_RIGHT, MAX_SPEED);
-                    uartWrite("enemy is on the right \r\n");
+                    movementDriveContinuously(MOVEMENT_FORWARD_RIGHT, MAX_SPEED);
                     break;
 
                 case LEFT:
-                    movementDriveContinuously(pMotors, MOVEMENT_FORWARD_LEFT, MAX_SPEED);
-                    uartWrite("enemy is on the left \r\n");
+                    movementDriveContinuously(MOVEMENT_FORWARD_LEFT, MAX_SPEED);
                     break;
 
                 default:
-                    uartWrite("enemy is not detected \r\n");
                     break;
             }
         }
 
         sensorsReadSharpSensorsAverage();
 
-        enum enemyPosition_E new_enemy_pos = getEnemyPosition();
-        if (new_enemy_pos != enemy_pos)
-            enemy_pos = new_enemy_pos;
+        enum enemyPosition_E newEnemyPosition = getEnemyPosition();
+        if (newEnemyPosition != enemyPosition)
+            enemyPosition = newEnemyPosition;
 
         if (checkIfStopBattle())
         {
-            movementStop(pMotors);
+            movementStop();
             return true;
         }
     }
-    movementStop(pMotors);
+    movementStop();
     return false;
 }
 
@@ -268,62 +259,55 @@ int main(void)
     /* USER CODE BEGIN 2 */
     sensorsInit();
     sensorsSetLineColorMode(BLACK_LINE);
-    movementInit(&gMotors);
+    movementInit();
 
     while (!sensorsButtonOn())
     {
         HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
         HAL_Delay(START_BUTTON_POLL_DELAY_MS);
-        uartWrite("Waiting for start button press\r\n");
     }
 
     while (sensorsButtonOn())
         HAL_Delay(START_BUTTON_POLL_DELAY_MS);
 
-    // robotTestGeneralTest(&gMotors);
-    // return 0;
-
-    uartWrite("------------START------------\r\n");
     /* USER CODE END 2 */
 
     /* Infinite loop */
     /* USER CODE BEGIN WHILE */
-    movementDriveContinuously(&gMotors, MOVEMENT_FORWARD, MEDIUM_SPEED);
+    movementDriveContinuously(MOVEMENT_FORWARD, MEDIUM_SPEED);
     while (1)
     {
         if (checkIfStopBattle())
             break;
 
         sensorsReadSharpSensorsAverage();
-        enum enemyPosition_E enemy_pos = getEnemyPosition();
+        enum enemyPosition_E enemyPosition = getEnemyPosition();
 
         sensorsReadQtrSensors();
-        if (isLineFound() && enemy_pos == NONE)
-            if (escapeLine(&gMotors, LINE_ESCAPE_TURN_DURATION_MS))
+        if (isLineFound() && enemyPosition == NONE)
+            if (escapeLine())
                 break;
 
         if (checkIfStopBattle())
             break;
 
-        if (enemy_pos != NONE)
+        if (enemyPosition != NONE)
         {
-            if (killEnemy(&gMotors, enemy_pos))
+            if (killEnemy(enemyPosition))
                 break;
-            movementDriveContinuously(&gMotors, MOVEMENT_FORWARD, MEDIUM_SPEED);
-            uartWrite("after killing enemy \r\n");
+            movementDriveContinuously(MOVEMENT_FORWARD, MEDIUM_SPEED);
         }
 
         sensorsReadQtrSensors();
         if (isLineFound())
-            if (escapeLine(&gMotors, LINE_ESCAPE_TURN_DURATION_MS))
+            if (escapeLine())
                 break;
         /* USER CODE END WHILE */
 
         /* USER CODE BEGIN 3 */
     }
 
-    uartWrite("end of while \r\n");
-    movementReset(&gMotors);
+    movementReset();
 
     /* USER CODE END 3 */
 }

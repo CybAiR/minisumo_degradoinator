@@ -3,14 +3,16 @@
 
 #include "movement.h"
 
-void robotTestAllMotors(const struct motors_S* pMotors,
-                        uint32_t               power,
-                        uint32_t               run_ms,
-                        uint32_t               pause_ms);
+/* Define ROBOT_TEST_ENABLED to compile the hardware diagnostic routines. */
+#ifdef ROBOT_TEST_ENABLED
+
+void robotTestAllMotors(uint32_t power, uint32_t runMs, uint32_t pauseMs);
 void robotTestQtrSensors(void);
 void robotTestSharpSensors(void);
 void robotTestButton(void);
-void robotTestAllMovements(const struct motors_S* pMotors, uint32_t speed, uint32_t duration_ms);
-void robotTestGeneralTest(const struct motors_S* pMotors);
+void robotTestAllMovements(uint32_t speed, uint32_t durationMs);
+void robotTestGeneralTest(void);
+
+#endif /* ROBOT_TEST_ENABLED */
 
 #endif
