@@ -1,10 +1,10 @@
 #ifndef ROBOT_TEST_H
 #define ROBOT_TEST_H
 
-#include "movement.h"
-
 /* Define ROBOT_TEST_ENABLED to compile the hardware diagnostic routines. */
 #ifdef ROBOT_TEST_ENABLED
+
+#include "movement.h"
 
 void robotTestAllMotors(uint32_t power, uint32_t runMs, uint32_t pauseMs);
 void robotTestQtrSensors(void);

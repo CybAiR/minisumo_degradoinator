@@ -23,7 +23,9 @@
 /* USER CODE BEGIN Includes */
 #include "movement.h"
 #include "sensors.h"
+#ifdef ROBOT_TEST_ENABLED
 #include "uart.h"
+#endif
 #include <stdbool.h>
 #include <stdint.h>
 /* USER CODE END Includes */
@@ -56,7 +58,9 @@ ADC_HandleTypeDef hadc1;
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
 
+#ifdef ROBOT_TEST_ENABLED
 UART_HandleTypeDef huart2;
+#endif
 
 /* USER CODE BEGIN PV */
 enum enemyPosition_E
@@ -81,19 +85,21 @@ static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_ADC1_Init(void);
+#ifdef ROBOT_TEST_ENABLED
 static void MX_USART2_UART_Init(void);
+#endif
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static bool checkIfStopBattle(void)
+static bool isBattleStopped(void)
 {
     return sensorsButtonOn();
 }
 
-static enum linePosition_E getLinePosition(void)
+static enum linePosition_E lineFound(void)
 {
     bool     isLeftFound  = false;
     bool     isRightFound = false;
@@ -120,14 +126,9 @@ static enum linePosition_E getLinePosition(void)
     return LINE_NOT_FOUND;
 }
 
-static bool isLineFound(void)
-{
-    return getLinePosition() != LINE_NOT_FOUND;
-}
-
 static bool escapeLine(void)
 {
-    enum linePosition_E linePosition = getLinePosition();
+    enum linePosition_E linePosition = lineFound();
 
     while (linePosition != LINE_NOT_FOUND)
     {
@@ -136,7 +137,7 @@ static bool escapeLine(void)
         HAL_Delay(LINE_ESCAPE_STOP_DURATION_MS);
         movementDriveFor(MOVEMENT_BACKWARD, MAX_SPEED, MOVE_BEFORE_TURN_MS);
 
-        if (checkIfStopBattle())
+        if (isBattleStopped())
         {
             movementStop();
             return true;
@@ -153,7 +154,7 @@ static bool escapeLine(void)
 
         movementStop();
         sensorsReadQtrSensors();
-        linePosition = getLinePosition();
+        linePosition = lineFound();
     }
 
     movementDriveContinuously(MOVEMENT_FORWARD, MEDIUM_SPEED);
@@ -178,7 +179,7 @@ static enum enemyPosition_E getEnemyPosition(void)
     return NONE;
 }
 
-static bool killEnemy(enum enemyPosition_E enemyPosition)
+static void killEnemy(enum enemyPosition_E enemyPosition)
 {
     enum enemyPosition_E movementEnemyPosition = NONE;
     while (enemyPosition != NONE)
@@ -211,14 +212,13 @@ static bool killEnemy(enum enemyPosition_E enemyPosition)
         if (newEnemyPosition != enemyPosition)
             enemyPosition = newEnemyPosition;
 
-        if (checkIfStopBattle())
+        if (isBattleStopped())
         {
             movementStop();
-            return true;
+            return;
         }
     }
     movementStop();
-    return false;
 }
 
 /* USER CODE END 0 */
@@ -255,7 +255,9 @@ int main(void)
     MX_TIM1_Init();
     MX_TIM3_Init();
     MX_ADC1_Init();
+#ifdef ROBOT_TEST_ENABLED
     MX_USART2_UART_Init();
+#endif
     /* USER CODE BEGIN 2 */
     sensorsInit();
     sensorsSetLineColorMode(BLACK_LINE);
@@ -277,29 +279,27 @@ int main(void)
     movementDriveContinuously(MOVEMENT_FORWARD, MEDIUM_SPEED);
     while (1)
     {
-        if (checkIfStopBattle())
+        if (isBattleStopped())
             break;
 
         sensorsReadSharpSensorsAverage();
         enum enemyPosition_E enemyPosition = getEnemyPosition();
 
         sensorsReadQtrSensors();
-        if (isLineFound() && enemyPosition == NONE)
+        if (lineFound() != LINE_NOT_FOUND && enemyPosition == NONE)
             if (escapeLine())
                 break;
 
-        if (checkIfStopBattle())
-            break;
-
         if (enemyPosition != NONE)
         {
-            if (killEnemy(enemyPosition))
+            killEnemy(enemyPosition);
+            if (isBattleStopped())
                 break;
             movementDriveContinuously(MOVEMENT_FORWARD, MEDIUM_SPEED);
         }
 
         sensorsReadQtrSensors();
-        if (isLineFound())
+        if (lineFound() != LINE_NOT_FOUND)
             if (escapeLine())
                 break;
         /* USER CODE END WHILE */
@@ -569,6 +569,7 @@ static void MX_TIM3_Init(void)
     HAL_TIM_MspPostInit(&htim3);
 }
 
+#ifdef ROBOT_TEST_ENABLED
 /**
  * @brief USART2 Initialization Function
  * @param None
@@ -601,6 +602,7 @@ static void MX_USART2_UART_Init(void)
 
     /* USER CODE END USART2_Init 2 */
 }
+#endif
 
 /**
  * @brief GPIO Initialization Function
@@ -658,7 +660,9 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
     /* USER CODE BEGIN Error_Handler_Debug */
+#ifdef ROBOT_TEST_ENABLED
     uartWrite("HAL initialization error\r\n");
+#endif
     /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

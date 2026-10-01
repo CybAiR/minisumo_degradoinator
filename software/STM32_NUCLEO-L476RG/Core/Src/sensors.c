@@ -1,6 +1,11 @@
 #include "sensors.h"
 #include "time_utils.h"
+#ifdef ROBOT_TEST_ENABLED
 #include "uart.h"
+#define REPORT_ERROR(message) uartWrite(message)
+#else
+#define REPORT_ERROR(message) ((void)0)
+#endif
 
 #define SHARP_AVERAGE_SAMPLE_COUNT  5U
 #define ADC_CONVERSION_TIMEOUT_MS   100U
@@ -34,20 +39,20 @@ void sensorsInit(void)
         .channel = ADC_CHANNEL_1, .type = SENSOR_TYPE_SHARP, .name = SENSOR_RIGHT};
 
     if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
-        uartWrite("ADC calibration error\r\n");
+        REPORT_ERROR("ADC calibration error\r\n");
 }
 
 static void sensorsReadAdc(uint32_t* pValue)
 {
     if (HAL_ADC_Start(&hadc1) != HAL_OK)
-        uartWrite("ADC start error\r\n");
+        REPORT_ERROR("ADC start error\r\n");
 
     if (HAL_ADC_PollForConversion(&hadc1, ADC_CONVERSION_TIMEOUT_MS) != HAL_OK)
-        uartWrite("ADC conversion error\r\n");
+        REPORT_ERROR("ADC conversion error\r\n");
 
     *pValue = HAL_ADC_GetValue(&hadc1);
     if (HAL_ADC_Stop(&hadc1) != HAL_OK)
-        uartWrite("ADC stop error\r\n");
+        REPORT_ERROR("ADC stop error\r\n");
 }
 
 static void sensorsSelectAdcChannel(const struct analogSensor_S* pSensor)
@@ -64,7 +69,7 @@ static void sensorsSelectAdcChannel(const struct analogSensor_S* pSensor)
         config.SamplingTime = ADC_SAMPLETIME_47CYCLES_5;
 
     if (HAL_ADC_ConfigChannel(&hadc1, &config) != HAL_OK)
-        uartWrite("ADC channel configuration error\r\n");
+        REPORT_ERROR("ADC channel configuration error\r\n");
 }
 
 static void sensorsRead(struct analogSensor_S* pSensor)

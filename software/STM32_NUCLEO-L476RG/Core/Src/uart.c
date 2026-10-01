@@ -1,5 +1,7 @@
 #include "uart.h"
 
+#ifdef ROBOT_TEST_ENABLED
+
 #include <stdio.h>
 #include <string.h>
 
@@ -38,3 +40,5 @@ void uartWriteSharp(uint32_t left, uint32_t middle, uint32_t right)
     uartWriteValue("sharp3", right);
     uartWrite("\r\n");
 }
+
+#endif /* ROBOT_TEST_ENABLED */
